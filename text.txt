@@ -1,0 +1,3 @@
+Le problème avec ton code : 
+- Tu génères trop de fichiers binaires Je veux pas que tu génères un fichier binaires pour chaque historique non c'est pas ça. Je veux que tu ajoutes à l'ancienne sequence hexa la nouvelle sequence hexa (biensur avec le nombre de repetition)
+- Je veux que tu fasses en sorte l'historique s'affiche bien comme une seule matrice sans espace entre les elements un peu comme une photo 

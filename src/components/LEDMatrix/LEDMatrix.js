@@ -1,35 +1,19 @@
 import React, { useState } from "react";
-import {
-  Container,
-  Row,
-  Col,
-  Button,
-  Modal,
-  ModalBody,
-  ModalFooter,
-  Card,
-  CardBody,
-  Progress,
-  Input,
-} from "reactstrap";
+import { Container, Row, Col, Button, Input } from "reactstrap";
 
 const LEDMatrixApp = () => {
   const [rows, setRows] = useState(0);
   const [cols, setCols] = useState(0);
   const [matrixConfig, setMatrixConfig] = useState([]);
   const [history, setHistory] = useState([]);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [repetitions, setRepetitions] = useState(10);
-  const [error, setError] = useState(null);
-  const [confirmModal, setConfirmModal] = useState(false);
-  const [currentDeleteIndex, setCurrentDeleteIndex] = useState(null);
+  const [repeatCount, setRepeatCount] = useState(10);
 
   const MAX_SIZE = 5;
 
+  // Initialisation de la grande matrice
   const validateAndSetConfig = () => {
     if (rows > MAX_SIZE || cols > MAX_SIZE) {
-      setError(`La taille maximale est ${MAX_SIZE}x${MAX_SIZE}.`);
+      alert(`La taille maximale est ${MAX_SIZE}x${MAX_SIZE}.`);
       return;
     }
     const newConfig = Array(rows)
@@ -44,82 +28,71 @@ const LEDMatrixApp = () => {
           )
       );
     setMatrixConfig(newConfig);
-    setError(null);
+    setHistory(
+      Array(rows)
+        .fill(0)
+        .map(() =>
+          Array(cols)
+            .fill(0)
+            .map(() => [])
+        )
+    );
   };
 
+  // Toggle cellule dans une sous-matrice
   const toggleCell = (row, col, i, j) => {
     const newConfig = [...matrixConfig];
     newConfig[row][col][i][j] = !newConfig[row][col][i][j];
     setMatrixConfig(newConfig);
   };
 
-  const generateBinary = (row, col) => {
-    const matrix = matrixConfig[row][col];
+  // Générer une séquence hexadécimale pour une sous-matrice
+  const generateHexSequence = (matrix) => {
     const columns = Array(8).fill("");
     for (let colIndex = 0; colIndex < 8; colIndex++) {
       let binaryString = "";
       for (let rowIndex = 7; rowIndex >= 0; rowIndex--) {
-        binaryString += matrix[rowIndex][colIndex] ? "0" : "1";
+        binaryString += matrix[rowIndex][colIndex] ? "0" : "1"; // Non-coloré = 1, coloré = 0
       }
-      columns[colIndex] = parseInt(binaryString, 2).toString(16).padStart(2, "0");
+      columns[colIndex] = binaryString;
     }
-    return Array(repetitions)
-      .fill(columns)
-      .flat();
+    return columns.map((binary) => parseInt(binary, 2).toString(16).padStart(2, "0"));
   };
 
-  const addToHistory = (row, col) => {
-    const binarySequence = generateBinary(row, col);
-    setHistory([
-      ...history,
-      {
-        name: `m${row + 1}_${col + 1}`,
-        binary: binarySequence,
-      },
-    ]);
+  // Ajouter l'état actuel dans l'historique
+  const addToHistory = () => {
+    const newHistory = [...history];
+    matrixConfig.forEach((row, rowIndex) =>
+      row.forEach((matrix, colIndex) => {
+        const hexSequence = generateHexSequence(matrix);
+        const repeatedSequence = Array(repeatCount).fill(hexSequence).flat();
+        newHistory[rowIndex][colIndex] = [
+          ...newHistory[rowIndex][colIndex],
+          ...repeatedSequence,
+        ];
+      })
+    );
+    setHistory(newHistory);
   };
 
-  const confirmDelete = (index) => {
-    setCurrentDeleteIndex(index);
-    setConfirmModal(true);
-  };
-
-  const deleteHistoryItem = () => {
-    setHistory(history.filter((_, i) => i !== currentDeleteIndex));
-    setConfirmModal(false);
-  };
-
-  const generateAllFiles = () => {
-    setIsGenerating(true);
-    let progressInterval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(progressInterval);
-          downloadFiles();
-          setProgress(0);
-          setIsGenerating(false);
-        }
-        return prev + 10;
-      });
-    }, 300);
-  };
-
-  const downloadFiles = () => {
-    history.forEach((item) => {
-      const content = new Uint8Array(item.binary.map((hex) => parseInt(hex, 16)));
-      const blob = new Blob([content], { type: "application/octet-stream" });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `${item.name}.bin`;
-      link.click();
-    });
-    alert("Fichiers Binaires Téléchargés avec succès !");
+  // Générer des fichiers binaires mis à jour
+  const generateBinaryFiles = () => {
+    history.forEach((row, rowIndex) =>
+      row.forEach((hexData, colIndex) => {
+        const binaryContent = new Uint8Array(hexData.map((hex) => parseInt(hex, 16)));
+        const blob = new Blob([binaryContent], { type: "application/octet-stream" });
+        const fileName = `m_${rowIndex + 1}${colIndex + 1}.bin`;
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = fileName;
+        link.click();
+      })
+    );
   };
 
   return (
     <Container className="py-4">
       <h1>LED Matrix Designer</h1>
-      {error && <div className="alert alert-danger">{error}</div>}
       <Row className="mb-3">
         <Col>
           <Input
@@ -140,98 +113,94 @@ const LEDMatrixApp = () => {
             Générer Matrice
           </Button>
         </Col>
+      </Row>
+      <Row className="mb-3">
         <Col>
           <Input
             type="number"
-            placeholder="Répétitions"
-            value={repetitions}
-            onChange={(e) => setRepetitions(parseInt(e.target.value) || 10)}
+            placeholder="Nombre de répétitions"
+            value={repeatCount}
+            onChange={(e) => setRepeatCount(parseInt(e.target.value) || 1)}
           />
         </Col>
+        <Col>
+          <Button color="info" onClick={addToHistory} disabled={!matrixConfig.length}>
+            Add to History
+          </Button>
+        </Col>
+        <Col>
+          <Button color="success" onClick={generateBinaryFiles} disabled={!history.flat().length}>
+            Generate Binary Files
+          </Button>
+        </Col>
       </Row>
+
       {matrixConfig.length > 0 && (
-        <Row>
-          {matrixConfig.map((row, rowIndex) =>
-            row.map((matrix, colIndex) => (
-              <Col key={`${rowIndex}-${colIndex}`} className="mb-4">
-                <Card>
-                  <CardBody>
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(8, 30px)",
-                        gap: "5px",
-                      }}
-                    >
-                      {matrix.map((row, i) =>
-                        row.map((cell, j) => (
-                          <div
-                            key={`${i}-${j}`}
-                            style={{
-                              width: "30px",
-                              height: "30px",
-                              backgroundColor: cell ? "#007bff" : "#e0e0e0",
-                              border: "1px solid #000",
-                              cursor: "pointer",
-                            }}
-                            onClick={() => toggleCell(rowIndex, colIndex, i, j)}
-                          />
-                        ))
-                      )}
-                    </div>
-                    <Button
-                      color="success"
-                      className="mt-3"
-                      onClick={() => addToHistory(rowIndex, colIndex)}
-                    >
-                      Add to History
-                    </Button>
-                  </CardBody>
-                </Card>
-              </Col>
-            ))
-          )}
-        </Row>
+        <div>
+          {matrixConfig.map((row, rowIndex) => (
+            <div key={rowIndex} style={{ display: "flex", gap: "5px", justifyContent: "center" }}>
+              {row.map((matrix, colIndex) => (
+                <div
+                  key={`${rowIndex}-${colIndex}`}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(8, 20px)",
+                    gap: "2px",
+                    backgroundColor: "#f8f9fa",
+                    padding: "3px",
+                    borderRadius: "5px",
+                  }}
+                >
+                  {matrix.map((matrixRow, i) =>
+                    matrixRow.map((cell, j) => (
+                      <div
+                        key={`${i}-${j}`}
+                        style={{
+                          width: "20px",
+                          height: "20px",
+                          borderRadius: "50%",
+                          backgroundColor: cell ? "#007bff" : "#e0e0e0",
+                          cursor: "pointer",
+                        }}
+                        onClick={() => toggleCell(rowIndex, colIndex, i, j)}
+                      />
+                    ))
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
       )}
+
       {history.length > 0 && (
-        <Row>
-          <Col>
-            <h5>Historique des Séquences</h5>
-            {history.map((item, index) => (
-              <div key={index} className="d-flex align-items-center mb-2">
-                <span className="mr-3">{item.name}</span>
-                <Button color="danger" onClick={() => confirmDelete(index)}>
-                  Annuler
-                </Button>
-              </div>
-            ))}
-          </Col>
-        </Row>
+        <div className="mt-4">
+          <h4>Historique des états</h4>
+          {history.map((row, rowIndex) => (
+            <div
+              key={rowIndex}
+              style={{
+                display: "grid",
+                gridTemplateColumns: `repeat(${cols * 8}, 10px)`,
+                gap: "0px",
+              }}
+            >
+              {row.map((col) =>
+                col.map((cell, index) => (
+                  <div
+                    key={index}
+                    style={{
+                      width: "10px",
+                      height: "10px",
+                      backgroundColor: cell ? "#007bff" : "#e0e0e0",
+                    }}
+                  ></div>
+                ))
+              )}
+            </div>
+          ))}
+        </div>
       )}
-      {history.length > 0 && (
-        <Button color="primary" onClick={generateAllFiles}>
-          Générer tous les fichiers
-        </Button>
-      )}
-      {isGenerating && (
-        <Modal isOpen={isGenerating}>
-          <ModalBody>
-            <h5>Génération en cours...</h5>
-            <Progress value={progress} />
-          </ModalBody>
-        </Modal>
-      )}
-      <Modal isOpen={confirmModal}>
-        <ModalBody>Confirmez-vous la suppression de cette séquence ?</ModalBody>
-        <ModalFooter>
-          <Button color="danger" onClick={deleteHistoryItem}>
-            Confirmer
-          </Button>
-          <Button color="secondary" onClick={() => setConfirmModal(false)}>
-            Annuler
-          </Button>
-        </ModalFooter>
-      </Modal>
     </Container>
   );
 };
