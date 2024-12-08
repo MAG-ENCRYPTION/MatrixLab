@@ -6,11 +6,10 @@ const LEDMatrixApp = () => {
   const [cols, setCols] = useState(0);
   const [matrixConfig, setMatrixConfig] = useState([]);
   const [history, setHistory] = useState([]);
-  const [repeatCount, setRepeatCount] = useState(10);
+  const [repeatCount, setRepeatCount] = useState(1);
 
   const MAX_SIZE = 5;
 
-  // Initialisation de la grande matrice
   const validateAndSetConfig = () => {
     if (rows > MAX_SIZE || cols > MAX_SIZE) {
       alert(`La taille maximale est ${MAX_SIZE}x${MAX_SIZE}.`);
@@ -28,66 +27,84 @@ const LEDMatrixApp = () => {
           )
       );
     setMatrixConfig(newConfig);
-    setHistory(
-      Array(rows)
-        .fill(0)
-        .map(() =>
-          Array(cols)
-            .fill(0)
-            .map(() => [])
-        )
-    );
+    setHistory([]);
   };
 
-  // Toggle cellule dans une sous-matrice
   const toggleCell = (row, col, i, j) => {
     const newConfig = [...matrixConfig];
     newConfig[row][col][i][j] = !newConfig[row][col][i][j];
     setMatrixConfig(newConfig);
   };
 
-  // Générer une séquence hexadécimale pour une sous-matrice
   const generateHexSequence = (matrix) => {
     const columns = Array(8).fill("");
     for (let colIndex = 0; colIndex < 8; colIndex++) {
       let binaryString = "";
       for (let rowIndex = 7; rowIndex >= 0; rowIndex--) {
-        binaryString += matrix[rowIndex][colIndex] ? "0" : "1"; // Non-coloré = 1, coloré = 0
+        binaryString += matrix[rowIndex][colIndex] ? "0" : "1";
       }
       columns[colIndex] = binaryString;
     }
     return columns.map((binary) => parseInt(binary, 2).toString(16).padStart(2, "0"));
   };
 
-  // Ajouter l'état actuel dans l'historique
   const addToHistory = () => {
-    const newHistory = [...history];
-    matrixConfig.forEach((row, rowIndex) =>
-      row.forEach((matrix, colIndex) => {
-        const hexSequence = generateHexSequence(matrix);
-        const repeatedSequence = Array(repeatCount).fill(hexSequence).flat();
-        newHistory[rowIndex][colIndex] = [
-          ...newHistory[rowIndex][colIndex],
-          ...repeatedSequence,
-        ];
-      })
+    const snapshot = matrixConfig.map((row) =>
+      row.map((matrix) =>
+        matrix.map((matrixRow) => [...matrixRow])
+      )
     );
-    setHistory(newHistory);
+    setHistory([...history, snapshot]);
   };
 
-  // Générer des fichiers binaires mis à jour
-  const generateBinaryFiles = () => {
-    history.forEach((row, rowIndex) =>
-      row.forEach((hexData, colIndex) => {
-        const binaryContent = new Uint8Array(hexData.map((hex) => parseInt(hex, 16)));
-        const blob = new Blob([binaryContent], { type: "application/octet-stream" });
-        const fileName = `m_${rowIndex + 1}${colIndex + 1}.bin`;
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.download = fileName;
-        link.click();
-      })
+  const removeLastHistory = () => {
+    if (history.length > 0) {
+      const newHistory = [...history];
+      newHistory.pop();
+      setHistory(newHistory);
+    }
+  };
+
+  const clearMatrix = () => {
+    const clearedMatrix = matrixConfig.map((row) =>
+      row.map((matrix) =>
+        matrix.map((matrixRow) => matrixRow.map(() => false))
+      )
     );
+    setMatrixConfig(clearedMatrix);
+  };
+
+  const generateBinaryFiles = async () => {
+    if (!window.showDirectoryPicker) {
+      alert("Votre navigateur ne supporte pas la File System Access API.");
+      return;
+    }
+
+    try {
+      const directoryHandle = await window.showDirectoryPicker();
+      matrixConfig.forEach(async (row, rowIndex) => {
+        row.forEach(async (matrix, colIndex) => {
+          const hexSequence = generateHexSequence(matrix);
+          const repeatedSequence = Array(repeatCount).fill(hexSequence).flat();
+          const binaryContent = new Uint8Array(
+            repeatedSequence.map((hex) => parseInt(hex, 16))
+          );
+          const fileName = `m_${rowIndex + 1}${colIndex + 1}.bin`;
+
+          const fileHandle = await directoryHandle.getFileHandle(fileName, {
+            create: true,
+          });
+          const writable = await fileHandle.createWritable();
+          await writable.write(binaryContent);
+          await writable.close();
+        });
+      });
+
+      alert("Fichiers binaires générés avec succès !");
+    } catch (error) {
+      console.error("Erreur lors de la génération des fichiers : ", error);
+      alert("Erreur lors de la génération des fichiers. Veuillez réessayer.");
+    }
   };
 
   return (
@@ -125,12 +142,26 @@ const LEDMatrixApp = () => {
         </Col>
         <Col>
           <Button color="info" onClick={addToHistory} disabled={!matrixConfig.length}>
-            Add to History
+            Ajouter à l'Historique
           </Button>
         </Col>
         <Col>
-          <Button color="success" onClick={generateBinaryFiles} disabled={!history.flat().length}>
-            Generate Binary Files
+          <Button color="warning" onClick={removeLastHistory} disabled={!history.length}>
+            Précédent
+          </Button>
+        </Col>
+        <Col>
+          <Button color="danger" onClick={clearMatrix} disabled={!matrixConfig.length}>
+            Effacer
+          </Button>
+        </Col>
+        <Col>
+          <Button
+            color="success"
+            onClick={generateBinaryFiles}
+            disabled={!matrixConfig.length}
+          >
+            Générer Binaires
           </Button>
         </Col>
       </Row>
@@ -176,27 +207,42 @@ const LEDMatrixApp = () => {
       {history.length > 0 && (
         <div className="mt-4">
           <h4>Historique des états</h4>
-          {history.map((row, rowIndex) => (
-            <div
-              key={rowIndex}
-              style={{
-                display: "grid",
-                gridTemplateColumns: `repeat(${cols * 8}, 10px)`,
-                gap: "0px",
-              }}
-            >
-              {row.map((col) =>
-                col.map((cell, index) => (
-                  <div
-                    key={index}
-                    style={{
-                      width: "10px",
-                      height: "10px",
-                      backgroundColor: cell ? "#007bff" : "#e0e0e0",
-                    }}
-                  ></div>
-                ))
-              )}
+          {history.map((snapshot, snapshotIndex) => (
+            <div key={snapshotIndex} style={{ marginBottom: "20px" }}>
+              <h5>État {snapshotIndex + 1}</h5>
+              <div>
+                {snapshot.map((row, rowIndex) => (
+                  <div key={rowIndex} style={{ display: "flex", gap: "5px", justifyContent: "center" }}>
+                    {row.map((matrix, colIndex) => (
+                      <div
+                        key={`${rowIndex}-${colIndex}`}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(8, 10px)",
+                          gap: "1px",
+                          backgroundColor: "#f8f9fa",
+                          padding: "3px",
+                          borderRadius: "5px",
+                        }}
+                      >
+                        {matrix.map((matrixRow, i) =>
+                          matrixRow.map((cell, j) => (
+                            <div
+                              key={`${i}-${j}`}
+                              style={{
+                                width: "10px",
+                                height: "10px",
+                                borderRadius: "50%",
+                                backgroundColor: cell ? "#007bff" : "#e0e0e0",
+                              }}
+                            />
+                          ))
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
         </div>
